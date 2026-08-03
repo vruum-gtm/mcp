@@ -1,0 +1,54 @@
+{
+  "name": "@vruum/mcp",
+  "version": "0.2.2",
+  "mcpName": "ai.vruum/mcp",
+  "description": "Stdio MCP bridge for the hosted Vruum revenue-platform MCP (https://api.vruum.ai/mcp): serves the advertised tool surface for credential-free introspection and proxies tool calls with your Vruum token.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "vruum-mcp": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vruum-gtm/mcp.git"
+  },
+  "homepage": "https://vruum.ai/docs/mcp",
+  "bugs": {
+    "url": "https://github.com/vruum-gtm/mcp/issues"
+  },
+  "files": [
+    "dist",
+    "tools.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "postbuild": "chmod +x dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "prepublishOnly": "npm run typecheck && npm run test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.0"
+  },
+  "keywords": [
+    "vruum",
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "sales",
+    "crm",
+    "revenue",
+    "outreach",
+    "gtm"
+  ]
+}

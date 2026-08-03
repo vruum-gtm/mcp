@@ -37,7 +37,11 @@ Already using the CLI? `npx @vruum/cli` → `vruum login --token vk_live_…` st
 ## What's inside
 
 - **[`tools.json`](tools.json)** — the full member-visible tool surface (155 tools: `search`, `fetch`, `manage_*`, `get_*`, deal/outreach/engagement/research tools), generated from the live server definition. Served verbatim for `tools/list`.
-- **[`src/index.ts`](src/index.ts)** — the bridge: static listings, proxied calls, one automatic reconnect, structured errors (a missing token is an explanation, not a crash).
+- **[`src/index.ts`](src/index.ts)** — the bridge: static listings, proxied calls, and structured errors
+  (a missing token is an explanation, not a crash). **A failed call is never automatically
+  retried** — many of these tools send outreach or spend money, and an ambiguous failure may
+  mean the server already executed, so a silent replay could double-send. The dead connection
+  is discarded, the error says so, and your agent decides whether the tool is safe to re-run.
 
 The distinctive design position of the Vruum MCP: **your AI harness authors all sales and marketing prose.** The server schedules, gates, persists, and sends — it has no server-side message generation. Outreach drafts surface to your agent as work items rather than being written for you.
 

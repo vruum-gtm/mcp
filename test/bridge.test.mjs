@@ -134,7 +134,10 @@ test("tools/call without a token returns a structured, instructive error", async
   assert.match(text, /vruum\.ai/);
 });
 
-test("tools/call for an unknown tool errors without contacting the network", async () => {
+test("tools/call for an unknown tool is a PROTOCOL error, not an isError result", async () => {
+  // Spec (server/tools#error-handling): errors in *finding* the tool are
+  // JSON-RPC errors (-32602 Invalid params); `isError: true` is reserved for
+  // errors originating from a tool's execution.
   const res = await rpc([
     INITIALIZE,
     INITIALIZED,
@@ -145,7 +148,41 @@ test("tools/call for an unknown tool errors without contacting the network", asy
       params: { name: "definitely_not_a_tool", arguments: {} },
     },
   ]);
-  const result = res.get(4).result;
-  assert.equal(result.isError, true);
-  assert.match(result.content[0].text, /Unknown tool/);
+  const msg = res.get(4);
+  assert.equal(msg.result, undefined, "must not return a result");
+  assert.equal(msg.error.code, -32602, "must be Invalid params");
+  assert.match(msg.error.message, /Unknown tool/);
+});
+
+test("tools/list rejects a cursor it never issued (-32602)", async () => {
+  // This server returns every tool in one page and never sets nextCursor, so
+  // any cursor is invalid. Spec: invalid cursors SHOULD be -32602.
+  const res = await rpc([
+    INITIALIZE,
+    INITIALIZED,
+    { jsonrpc: "2.0", id: 5, method: "tools/list", params: { cursor: "bogus" } },
+  ]);
+  const msg = res.get(5);
+  assert.equal(msg.result, undefined, "must not return a result");
+  assert.equal(msg.error.code, -32602);
+});
+
+test("declares the tools capability with listChanged:false (static listing)", async () => {
+  const res = await rpc([INITIALIZE]);
+  const caps = res.get(1).result.capabilities;
+  assert.ok(caps.tools, "servers supporting tools MUST declare the tools capability");
+  assert.equal(caps.tools.listChanged, false, "listing is a static snapshot");
+});
+
+test("writes nothing but JSON-RPC to stdout", async () => {
+  // stdio transport: "The server MUST NOT write anything to its stdout that
+  // is not a valid MCP message." Every stdout line must parse as JSON-RPC.
+  const res = await rpc([
+    INITIALIZE,
+    INITIALIZED,
+    { jsonrpc: "2.0", id: 6, method: "tools/list", params: {} },
+  ]);
+  // rpc() JSON.parses every non-empty stdout line, so reaching here without a
+  // throw already proves stdout hygiene; assert we got the response back.
+  assert.equal(res.get(6).result.tools.length, TOOLS.tool_count);
 });

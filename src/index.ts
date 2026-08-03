@@ -38,7 +38,9 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
   CallToolRequestSchema,
   CallToolResultSchema,
+  ErrorCode,
   ListToolsRequestSchema,
+  McpError,
   type CallToolResult,
 } from "@modelcontextprotocol/sdk/types.js";
 
@@ -231,7 +233,10 @@ async function main(): Promise<void> {
   const server = new Server(
     { name: "vruum-mcp", version: pkg.version },
     {
-      capabilities: { tools: {} },
+      // `listChanged: false` is the honest declaration: the listing is a
+      // static snapshot bundled at release time, so this server never emits
+      // notifications/tools/list_changed.
+      capabilities: { tools: { listChanged: false } },
       instructions:
         "Bridge to the hosted Vruum revenue-platform MCP. Tool listings are " +
         "served locally; tool calls execute against " +
@@ -239,15 +244,31 @@ async function main(): Promise<void> {
     },
   );
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: toolsDoc.tools as never,
-  }));
+  server.setRequestHandler(ListToolsRequestSchema, async (request) => {
+    // The full list is returned in one page, so `nextCursor` is never set and
+    // a client can never legitimately hold a cursor for this server. Spec:
+    // "Invalid cursors SHOULD result in an error with code -32602."
+    const cursor = request.params?.cursor;
+    if (cursor !== undefined) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        "Invalid cursor: this server returns all tools in a single page and " +
+          "never issues a nextCursor.",
+      );
+    }
+    return { tools: toolsDoc.tools as never };
+  });
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
+    // Spec (server/tools#error-handling): errors in *finding* the tool are
+    // PROTOCOL errors, not `isError` results — only errors originating from a
+    // tool's execution use `isError: true` (so the model can self-correct).
     if (!toolsDoc.tools.some((t) => t.name === name)) {
-      return errorResult(`Unknown tool: ${name}`);
+      throw new McpError(ErrorCode.InvalidParams, `Unknown tool: ${name}`);
     }
+    // A missing token IS an execution error — the tool exists and the model
+    // should see why it could not run.
     if (!proxy) return errorResult(NO_TOKEN_HELP);
     return proxy.call(name, (args ?? {}) as Record<string, unknown>);
   });

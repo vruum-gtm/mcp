@@ -131,10 +131,11 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Get Campaign Outcomes\n\nMCP adapter for the same canonical campaign-outcomes domain model.\n\n### Responses:\n\n**200**: Successful Response (Success Response)\nContent-Type: application/json\n\n**Example Response:**\n```json\n{\n  \"computed_at\": \"2023-01-01T00:00:00Z\",\n  \"outcome_cutoff\": \"2023-01-01T00:00:00Z\",\n  \"coverage_complete\": true,\n  \"items\": [\n    {\n      \"campaign_id\": \"Campaign Id\",\n      \"availability\": \"Availability\",\n      \"coverage_complete\": true,\n      \"data_watermark\": {}\n    }\n  ]\n}\n```",
+      "description": "Get Campaign Outcomes\n\nCompare campaigns on real outcomes — contacted, replied, meetings booked.\n\nAnswers \"which of these campaigns actually worked\" for up to 100 campaigns\nin one call, over an explicit UTC window. Every campaign you ask for comes\nback, including ones with no usable data — those carry\n`availability: \"unavailable\"` rather than being dropped or reported as\nzero, so a campaign never looks like a failure when it is really just\nunmeasured.\n\n**Use `get_performance_metrics` instead** for funnel and time-series views\nof the whole account; this tool is for ranking specific campaigns against\neach other on a like-for-like cohort.\n\nReading the response:\n\n- **`outcome_cutoff`** is the \"as of\" moment. A reply or meeting counts\n  only if it happened by then, so a campaign that started last week is not\n  punished for outcomes that have not had time to land. Keep it identical\n  across campaigns you intend to compare.\n- **`coverage_complete: false`** means attribution for that campaign is\n  still incomplete. Report the numbers, but do not rank on them — that is\n  the difference between \"performed badly\" and \"we cannot tell yet\".\n- **`data_watermark`** is how far message and meeting ingestion has caught\n  up. Outcomes after the watermark are not in these numbers yet.\n- **`computed_at`** stamps the calculation, which is worth quoting when\n  the same window is re-run later and moves.\n\nWindow rules the server enforces: all three timestamps must carry a UTC\noffset, `start_at < end_at <= outcome_cutoff`, and `outcome_cutoff` cannot\nbe in the future. `campaign_ids` must be unique.\n\n### Responses:\n\n**200**: Successful Response (Success Response)\nContent-Type: application/json\n\n**Example Response:**\n```json\n{\n  \"computed_at\": \"2023-01-01T00:00:00Z\",\n  \"outcome_cutoff\": \"2023-01-01T00:00:00Z\",\n  \"coverage_complete\": true,\n  \"items\": [\n    {\n      \"campaign_id\": \"Campaign Id\",\n      \"availability\": \"Availability\",\n      \"coverage_complete\": true,\n      \"data_watermark\": {}\n    }\n  ]\n}\n```",
       "inputSchema": {
         "properties": {
           "campaign_ids": {
+            "description": "Campaigns to compare, 1-100, no duplicates. Every id you pass is returned — ones without usable data come back as availability='unavailable' rather than being dropped.",
             "items": {
               "format": "uuid",
               "type": "string"
@@ -145,6 +146,7 @@
             "type": "array"
           },
           "end_at": {
+            "description": "End of the comparison window (UTC offset required). Bounds which touches enter the cohort — NOT which outcomes count; that is outcome_cutoff. Must be on or before outcome_cutoff.",
             "format": "date-time",
             "title": "end_at",
             "type": "string"
@@ -155,11 +157,13 @@
             "type": "string"
           },
           "outcome_cutoff": {
+            "description": "The 'as of' moment for attributing outcomes (UTC offset required). A reply or booked meeting counts only if it happened by this time, so a recently-started campaign is not penalised for outcomes that have not had time to land. Use the SAME value across campaigns you intend to rank against each other. Cannot be in the future.",
             "format": "date-time",
             "title": "outcome_cutoff",
             "type": "string"
           },
           "start_at": {
+            "description": "Start of the comparison window (UTC offset required). Touches before this are excluded. Must be earlier than end_at.",
             "format": "date-time",
             "title": "start_at",
             "type": "string"
@@ -1459,7 +1463,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Manage Relationship Action\n\nDraft and transition one approval-gated relationship action.\n\n### Responses:\n\n**200**: Successful Response (Success Response)\nContent-Type: application/json\n\n**Example Response:**\n```json\n{\n  \"status\": \"Status\",\n  \"attempt\": {\n    \"ref\": \"Ref\",\n    \"relationship_owner_user_id\": \"Relationship Owner User Id\",\n    \"action_type\": \"Action Type\",\n    \"target_ref\": \"Target Ref\",\n    \"target_snapshot\": {},\n    \"result_ref\": \"Result Ref\",\n    \"result_type\": \"Result Type\",\n    \"channel\": \"Channel\",\n    \"client_request_id\": \"Client Request Id\",\n    \"route_fingerprint\": \"Route Fingerprint\",\n    \"message_text\": \"Message Text\",\n    \"state\": \"State\",\n    \"version\": 1,\n    \"created_at\": \"Created At\",\n    \"updated_at\": \"Updated At\"\n  },\n  \"approval_required\": true,\n  \"next_actions\": [\n    \"string\"\n  ],\n  \"web_url\": \"Web Url\"\n}\n```",
+      "description": "Manage Relationship Action\n\nDraft, approve, and record the outcome of ONE warm-introduction attempt.\n\nA \"relationship action\" is a single attempt to reach a target person\n*through a mutual connection* rather than by contacting them directly:\nasking a colleague for an intro, checking whether a connector actually\nknows them, or requesting an entry into their company. `find_warm_path`\ndiscovers those routes and never writes; this tool is the only way to act\non one.\n\n**Use this instead of the direct-outreach tools when the path runs through\na person.** `manage_outreach` and `manage_messages` send to the target\nthemselves; `manage_engagements` handles reactions and comments on\ncontent. This tool messages the *connector*.\n\n**Nothing here auto-sends.** Every attempt walks a state machine you drive\none call at a time: `draft` creates it from a `result_ref` returned by\n`find_warm_path`, then transitions approve the exact message text, confirm\nthat you sent it yourself outside Vruum, classify how the connector\nreplied, record the final outcome, or cancel. The response's\n`approval_required` and `next_actions` fields tell you which transitions\nare legal right now — read them rather than guessing.\n\nTwo consistency rules the server enforces:\n\n- **`draft` is idempotent on `client_request_id`.** Reuse the same value\n  when retrying a draft; a new value creates a second attempt.\n- **Every transition needs `expected_version`.** A stale version means\n  someone else moved the attempt and yours is rejected rather than\n  silently overwriting — re-read the attempt and retry.\n\nA `409 route_stale` on draft means the underlying relationship evidence\nchanged since it was reviewed; re-run `find_warm_path` and draft from a\nfresh `result_ref`.\n\n### Responses:\n\n**200**: Successful Response (Success Response)\nContent-Type: application/json\n\n**Example Response:**\n```json\n{\n  \"status\": \"Status\",\n  \"attempt\": {\n    \"ref\": \"Ref\",\n    \"relationship_owner_user_id\": \"Relationship Owner User Id\",\n    \"action_type\": \"Action Type\",\n    \"target_ref\": \"Target Ref\",\n    \"target_snapshot\": {},\n    \"result_ref\": \"Result Ref\",\n    \"result_type\": \"Result Type\",\n    \"channel\": \"Channel\",\n    \"client_request_id\": \"Client Request Id\",\n    \"route_fingerprint\": \"Route Fingerprint\",\n    \"message_text\": \"Message Text\",\n    \"state\": \"State\",\n    \"version\": 1,\n    \"created_at\": \"Created At\",\n    \"updated_at\": \"Updated At\"\n  },\n  \"approval_required\": true,\n  \"next_actions\": [\n    \"string\"\n  ],\n  \"web_url\": \"Web Url\"\n}\n```",
       "inputSchema": {
         "properties": {
           "for_company": {

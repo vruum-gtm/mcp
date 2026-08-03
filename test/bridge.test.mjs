@@ -93,14 +93,26 @@ test("tools/list serves the full bundled surface without credentials", async () 
   ]);
   const tools = res.get(2).result.tools;
   assert.equal(tools.length, TOOLS.tool_count);
-  assert.ok(tools.length > 100, "expected the full member surface");
+  // The client facade view — curated compound tools, not the granular tail.
+  assert.ok(tools.length >= 20, "expected the client facade surface");
   const names = new Set(tools.map((t) => t.name));
   assert.ok(names.has("get_daily_briefing"));
   assert.ok(names.has("search"));
+  // Operator tools must never appear in the public artifact — this includes
+  // annotation-gated ones (role: operator), not just the OPERATOR_TOOLS set.
+  for (const op of ["get_operator_overview", "manage_clients", "manage_ad_campaign"]) {
+    assert.ok(!names.has(op), `operator tool ${op} leaked into tools.json`);
+  }
   for (const t of tools) {
     assert.ok(t.name, "every tool has a name");
     assert.ok(t.inputSchema, `tool ${t.name} has an inputSchema`);
+    assert.ok(t.annotations, `tool ${t.name} carries safety annotations`);
     assert.equal(t.outputSchema, undefined, `tool ${t.name} must not declare outputSchema`);
+    assert.equal(
+      (t._meta ?? {}).defer_loading,
+      undefined,
+      `tool ${t.name} must not carry the stripped defer_loading tag`,
+    );
   }
 });
 

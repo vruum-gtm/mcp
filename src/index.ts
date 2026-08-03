@@ -37,11 +37,20 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
+  CallToolResultSchema,
   ListToolsRequestSchema,
   type CallToolResult,
 } from "@modelcontextprotocol/sdk/types.js";
 
 const DEFAULT_MCP_URL = "https://api.vruum.ai/mcp";
+// The SDK's per-request default is 60s, which real Vruum tools (research,
+// imports) legitimately exceed. Overridable via VRUUM_MCP_TIMEOUT_MS.
+const DEFAULT_CALL_TIMEOUT_MS = 300_000;
+
+function resolveCallTimeoutMs(): number {
+  const raw = Number(process.env.VRUUM_MCP_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_CALL_TIMEOUT_MS;
+}
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // dist/index.js → package root sibling tools.json (also works from src/ via tsx).
@@ -102,9 +111,25 @@ function errorResult(text: string): CallToolResult {
   return { content: [{ type: "text", text }], isError: true };
 }
 
-/** Lazily-connected client to the hosted server; reconnects once on failure. */
+/**
+ * Lazily-connected client to the hosted server.
+ *
+ * Failure semantics, deliberately conservative: a failed `tools/call` is
+ * NEVER automatically retried. Many Vruum tools mutate state, send outreach
+ * externally, or spend money, and an ambiguous failure (timeout, dropped
+ * response) may mean the server already executed — a client-side replay could
+ * double-send. The failed connection is discarded so the NEXT call gets a
+ * fresh session, the error is surfaced structurally, and the calling harness
+ * decides whether the tool is safe to retry. (This mirrors Vruum's own
+ * server-side durable-send-intent discipline: ambiguous outcomes park, they
+ * are not replayed.)
+ */
 class RemoteProxy {
   private client: Client | null = null;
+  /** Serializes connection creation so concurrent first calls share one
+   * client instead of racing to overwrite `this.client` (and later closing
+   * each other's healthy connections). */
+  private connecting: Promise<Client> | null = null;
 
   constructor(
     private readonly url: string,
@@ -112,45 +137,85 @@ class RemoteProxy {
     private readonly version: string,
   ) {}
 
-  private async connect(): Promise<Client> {
-    const transport = new StreamableHTTPClientTransport(new URL(this.url), {
-      requestInit: {
-        headers: { Authorization: `Bearer ${this.token}` },
-      },
+  private getClient(): Promise<Client> {
+    if (this.client) return Promise.resolve(this.client);
+    if (!this.connecting) {
+      this.connecting = (async () => {
+        const transport = new StreamableHTTPClientTransport(new URL(this.url), {
+          requestInit: {
+            headers: { Authorization: `Bearer ${this.token}` },
+          },
+        });
+        const client = new Client(
+          { name: "vruum-mcp-bridge", version: this.version },
+          { capabilities: {} },
+        );
+        await client.connect(transport);
+        this.client = client;
+        return client;
+      })().finally(() => {
+        this.connecting = null;
+      });
+    }
+    return this.connecting;
+  }
+
+  /** Discard `failed` only if it is still the current client — a concurrent
+   * call may already have replaced it with a healthy connection. */
+  private discard(failed: Client): void {
+    if (this.client === failed) this.client = null;
+    void failed.close().catch(() => {
+      /* already dead */
     });
-    const client = new Client(
-      { name: "vruum-mcp-bridge", version: this.version },
-      { capabilities: {} },
+  }
+
+  /**
+   * Raw tools/call — deliberately NOT `client.callTool()`: the helper
+   * validates results against outputSchemas cached by `listTools()`, and the
+   * remote advertises outputSchemas this bridge intentionally does not. The
+   * raw request form has no cache and no validation, so passthrough stays
+   * passthrough. Timeout is raised above the SDK's 60s default because real
+   * Vruum tools (research, imports) legitimately run longer.
+   */
+  private rawCall(
+    client: Client,
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<CallToolResult> {
+    return client.request(
+      { method: "tools/call", params: { name, arguments: args } },
+      CallToolResultSchema,
+      { timeout: resolveCallTimeoutMs(), resetTimeoutOnProgress: true },
     );
-    await client.connect(transport);
-    this.client = client;
-    return client;
   }
 
   async call(name: string, args: Record<string, unknown>): Promise<CallToolResult> {
-    let client = this.client ?? (await this.connect());
+    let client: Client;
     try {
-      return (await client.callTool({ name, arguments: args })) as CallToolResult;
-    } catch (firstErr) {
-      // One reconnect: sessions expire server-side and the transport does not
-      // resurrect them for POSTs. A second consecutive failure is a real error.
-      try {
-        await this.client?.close();
-      } catch {
-        /* already dead */
-      }
-      this.client = null;
-      try {
-        client = await this.connect();
-        return (await client.callTool({ name, arguments: args })) as CallToolResult;
-      } catch {
-        const msg = firstErr instanceof Error ? firstErr.message : String(firstErr);
-        return errorResult(
-          `Vruum MCP call failed against ${this.url}: ${msg}\n` +
-            "Check that your token is valid (Settings → API tokens) and the " +
-            "endpoint is reachable.",
-        );
-      }
+      client = await this.getClient();
+    } catch (connectErr) {
+      // First-connect failures (DNS, invalid token, endpoint down) get the
+      // same structured error path as call failures — never a raw handler
+      // throw that surfaces as an opaque JSON-RPC internal error.
+      const msg = connectErr instanceof Error ? connectErr.message : String(connectErr);
+      return errorResult(
+        `Could not connect to the Vruum MCP at ${this.url}: ${msg}\n` +
+          "Check that your token is valid (Settings → API tokens) and the " +
+          "endpoint is reachable.",
+      );
+    }
+    try {
+      return await this.rawCall(client, name, args);
+    } catch (callErr) {
+      this.discard(client);
+      const msg = callErr instanceof Error ? callErr.message : String(callErr);
+      return errorResult(
+        `Vruum MCP call '${name}' failed against ${this.url}: ${msg}\n` +
+          "NOT automatically retried — the server may or may not have executed " +
+          "the action, and replaying a send/spend tool could duplicate it. " +
+          "Verify state with a read tool (e.g. fetch/search) before retrying; " +
+          "the next call will use a fresh connection.",
+      );
     }
   }
 }

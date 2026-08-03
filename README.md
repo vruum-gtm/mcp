@@ -31,6 +31,7 @@ Already using the CLI? `npx @vruum/cli` → `vruum login --token vk_live_…` st
 | --- | --- | --- |
 | `VRUUM_MCP_TOKEN` | Vruum personal access token | — (falls back to `VRUUM_TOKEN`, then `~/.vruum/credentials`) |
 | `VRUUM_MCP_URL` | Hosted MCP endpoint | `https://api.vruum.ai/mcp` |
+| `VRUUM_MCP_TIMEOUT_MS` | Per-call timeout (research/import tools run long) | `300000` |
 | `VRUUM_CONFIG_DIR` | Credentials directory | `~/.vruum` |
 
 ## What's inside

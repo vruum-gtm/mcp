@@ -36,7 +36,7 @@ Already using the CLI? `npx @vruum/cli` → `vruum login --token vk_live_…` st
 
 ## What's inside
 
-- **[`tools.json`](tools.json)** — the full member-visible tool surface (155 tools: `search`, `fetch`, `manage_*`, `get_*`, deal/outreach/engagement/research tools), generated from the live server definition. Served verbatim for `tools/list`.
+- **[`tools.json`](tools.json)** — the client-advertised tool surface: **29 curated compound tools** (`search`, `fetch`, `research`, `skill`, and the `manage_*` / `get_*` families covering people, deals, outreach, engagement, content, campaigns, and revenue), each carrying MCP safety annotations. This is exactly what a real Vruum session is advertised — one tool per decision rather than a sprawl of granular endpoints, so an agent never has to disambiguate between overlapping legacy verbs. Generated from the live server definition and served verbatim for `tools/list`.
 - **[`src/index.ts`](src/index.ts)** — the bridge: static listings, proxied calls, and structured errors
   (a missing token is an explanation, not a crash). **A failed call is never automatically
   retried** — many of these tools send outreach or spend money, and an ambiguous failure may

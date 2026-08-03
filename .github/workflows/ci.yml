@@ -1,0 +1,51 @@
+# CI for the PUBLIC vruum-gtm/mcp mirror.
+#
+# This file lives in the monorepo at mcp-bridge/.github/workflows/ci.yml and is
+# rsynced to the mirror's root by publish-mcp-bridge.yml, so the public repo has
+# a real, visible CI status — MCP directories read it as a maintenance signal,
+# and contributors opening PRs against the mirror get their changes checked.
+#
+# It deliberately does NOT regenerate tools.json: that artifact is produced from
+# the private backend and guarded upstream by
+# backend/tests/test_mcp_bridge_tools_snapshot.py. Here we verify the shipped
+# artifact is well-formed and that the bridge builds and speaks the protocol.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+      - name: Verify the shipped tool surface is well-formed
+        run: |
+          set -euo pipefail
+          node -e '
+            const doc = require("./tools.json");
+            if (!Array.isArray(doc.tools) || doc.tools.length === 0) {
+              throw new Error("tools.json has no tools");
+            }
+            if (doc.tools.length !== doc.tool_count) {
+              throw new Error(`tool_count ${doc.tool_count} != ${doc.tools.length} tools`);
+            }
+            for (const t of doc.tools) {
+              if (!t.name) throw new Error("a tool is missing a name");
+              if (!t.inputSchema) throw new Error(`${t.name} is missing an inputSchema`);
+              if (!t.description) throw new Error(`${t.name} is missing a description`);
+              if (t.outputSchema) throw new Error(`${t.name} must not declare an outputSchema`);
+            }
+            console.log(`tools.json OK — ${doc.tool_count} tools`);
+          '

@@ -1952,7 +1952,7 @@
                         "type": "null"
                       }
                     ],
-                    "description": "Projection: omit for the default compact list (the prose-heavy ai_tone_instructions/ai_selling_strategy/touch_sequence come back null); 'minimal' for id/name/slug only (dropdowns/selection); 'full' to include the AI-strategy prose for EVERY campaign (10KB+ each — a multi-campaign tenant can exceed client output limits and get silently truncated; prefer fetch type='campaign' for one campaign's full config).",
+                    "description": "Projection: omit for the default compact list (the prose-heavy fields — ai_tone_instructions, ai_selling_strategy, touch_sequence, value_proposition, primary_problem_solved, differentiators, positioning_angle, notable_customers_override — come back null; a null there does NOT mean the campaign lacks the value); 'minimal' for id/name/slug only (dropdowns/selection); 'full' to include the prose for EVERY campaign (10KB+ each — a multi-campaign tenant can exceed client output limits and get silently truncated; prefer fetch type='campaign' for one campaign's full config).",
                     "title": "Fields"
                   }
                 },

@@ -331,7 +331,7 @@
                 "type": "null"
               }
             ],
-            "description": "Filter by campaign name or UUID. Returns only engagements for people in that campaign. IGNORED when source='engagers' (engagers are not campaign-keyed until the operator acts).",
+            "description": "Filter by campaign name or UUID. Returns engagements AUTHORED under that campaign's plans (the row's source_campaign_id — not the person's current campaign membership). Unknown campaign = 404. IGNORED when source='engagers' (engagers are not campaign-keyed until the operator acts).",
             "title": "campaign",
             "type": "string"
           },
@@ -2049,7 +2049,7 @@
                         "type": "null"
                       }
                     ],
-                    "description": "Campaign UUID, or '__none__' for people with no campaign assigned (resolved via the queue's campaign_id resolver).",
+                    "description": "Campaign UUID, or '__none__' for rows authored outside any campaign. Filters the message's AUTHORING campaign (source_campaign_id) — not the person's current campaign membership.",
                     "title": "Campaign Id"
                   },
                   "category": {

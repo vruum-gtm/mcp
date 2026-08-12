@@ -1375,7 +1375,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Manage Network Identity Resolution\n\nPreview or apply one durable identity-resolution decision.\n\n``commit=false`` is mandatory preview mode and performs no write. Re-submit\nthe reviewed action with ``commit=true`` to merge one owned source identity,\nadd/remove a company affiliation, or classify an email mailbox. Decisions\nare tenant-scoped, attributed to the caller, survive future syncs, and\nrebuild the active projection before returning.\n\n### Responses:\n\n**200**: Successful Response (Success Response)\nContent-Type: application/json\n\n**Example Response:**\n```json\n{\n  \"status\": \"Status\",\n  \"change\": {},\n  \"next_actions\": [\n    \"string\"\n  ]\n}\n```",
+      "description": "Manage Network Identity Resolution\n\nPreview or apply one durable identity-resolution decision.\n\n``commit=false`` is mandatory preview mode and performs no write. Re-submit\nthe reviewed action with ``commit=true`` to merge prospect rows, merge one\nowned source identity, add/remove a company affiliation, or classify an\nemail mailbox. Decisions\nare tenant-scoped, attributed to the caller, survive future syncs, and\nrebuild the active projection before returning.\n\n### Responses:\n\n**200**: Successful Response (Success Response)\nContent-Type: application/json\n\n**Example Response:**\n```json\n{\n  \"status\": \"Status\",\n  \"change\": {},\n  \"next_actions\": [\n    \"string\"\n  ]\n}\n```",
       "inputSchema": {
         "properties": {
           "for_company": {

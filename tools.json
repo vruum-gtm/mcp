@@ -465,6 +465,19 @@
             "minimum": 0,
             "title": "offset",
             "type": "integer"
+          },
+          "person_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional network_person_<uuid> reference for one prospect.",
+            "title": "person_ref",
+            "type": "string"
           }
         },
         "title": "get_network_identity_reviewArguments",
@@ -1378,12 +1391,172 @@
       "description": "Manage Network Identity Resolution\n\nPreview or apply one durable identity-resolution decision.\n\n``commit=false`` is mandatory preview mode and performs no write. Re-submit\nthe reviewed action with ``commit=true`` to merge prospect rows, merge one\nowned source identity, add/remove a company affiliation, or classify an\nemail mailbox. Decisions\nare tenant-scoped, attributed to the caller, survive future syncs, and\nrebuild the active projection before returning.\n\n### Responses:\n\n**200**: Successful Response (Success Response)\nContent-Type: application/json\n\n**Example Response:**\n```json\n{\n  \"status\": \"Status\",\n  \"change\": {},\n  \"next_actions\": [\n    \"string\"\n  ]\n}\n```",
       "inputSchema": {
         "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "const": "merge_identity",
+                "title": "Action",
+                "type": "string"
+              },
+              {
+                "const": "merge_people",
+                "title": "Action",
+                "type": "string"
+              },
+              {
+                "const": "review_people",
+                "title": "Action",
+                "type": "string"
+              },
+              {
+                "const": "set_affiliation",
+                "title": "Action",
+                "type": "string"
+              },
+              {
+                "const": "classify_mailbox",
+                "title": "Action",
+                "type": "string"
+              }
+            ],
+            "title": "action",
+            "type": "string"
+          },
+          "affiliation_kind": {
+            "default": "employment",
+            "enum": [
+              "employment",
+              "advisory",
+              "membership",
+              "other"
+            ],
+            "title": "affiliation_kind",
+            "type": "string"
+          },
+          "basis": {
+            "default": "manual",
+            "enum": [
+              "manual",
+              "email_domain",
+              "source_claim",
+              "company_name"
+            ],
+            "title": "basis",
+            "type": "string"
+          },
+          "classification": {
+            "enum": [
+              "person",
+              "shared_mailbox",
+              "automated"
+            ],
+            "title": "classification",
+            "type": "string"
+          },
+          "commit": {
+            "default": false,
+            "title": "commit",
+            "type": "boolean"
+          },
+          "company_ref": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "company_ref",
+            "type": "string"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "const": "not_duplicate",
+                "title": "Decision",
+                "type": "string"
+              },
+              {
+                "default": "add",
+                "enum": [
+                  "add",
+                  "remove"
+                ],
+                "title": "Decision",
+                "type": "string"
+              }
+            ],
+            "title": "decision",
+            "type": "string"
+          },
           "for_company": {
             "description": "Optional company ID or name (UUID, or case-insensitive EXACT name match — partial / substring matches are NOT supported; ambiguous names raise 400) to execute this tool as. Use get_operator_overview with view='companies' to list available companies. Only needed if you manage multiple companies. Access is enforced server-side: the tool resolves the value to a user_company_id and verifies the caller's membership in `company_users` — a 403 'Company not found or access denied' means EITHER the value did not match a known company OR the caller is not a member of it. The MCP operator role itself is NOT auto-granted — operators get this access by being members of each client company via `company_users` (the same row that grants any normal user access).",
             "title": "for_company",
             "type": "string"
+          },
+          "reason": {
+            "maxLength": 500,
+            "minLength": 3,
+            "title": "reason",
+            "type": "string"
+          },
+          "source_identity_ref": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "source_identity_ref",
+            "type": "string"
+          },
+          "source_person_ref": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "source_person_ref",
+            "type": "string"
+          },
+          "surviving_person_ref": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "surviving_person_ref",
+            "type": "string"
+          },
+          "target_entity_ref": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "target_entity_ref",
+            "type": "string"
+          },
+          "target_person_ref": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "target_person_ref",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "title",
+            "type": "string"
           }
         },
+        "required": [
+          "action",
+          "reason"
+        ],
         "title": "manage_network_identity_resolutionArguments",
         "type": "object"
       },
@@ -1539,12 +1712,176 @@
       "description": "Manage Relationship Action\n\nDraft, approve, and record the outcome of ONE warm-introduction attempt.\n\nA \"relationship action\" is a single attempt to reach a target person\n*through a mutual connection* rather than by contacting them directly:\nasking a colleague for an intro, checking whether a connector actually\nknows them, or requesting an entry into their company. `find_warm_path`\ndiscovers those routes and never writes; this tool is the only way to act\non one.\n\n**Use this instead of the direct-outreach tools when the path runs through\na person.** `manage_outreach` and `manage_messages` send to the target\nthemselves; `manage_engagements` handles reactions and comments on\ncontent. This tool messages the *connector*.\n\n**Nothing here auto-sends.** Every attempt walks a state machine you drive\none call at a time: `draft` creates it from a `result_ref` returned by\n`find_warm_path`, then transitions approve the exact message text, confirm\nthat you sent it yourself outside Vruum, classify how the connector\nreplied, record the final outcome, or cancel. The response's\n`approval_required` and `next_actions` fields tell you which transitions\nare legal right now — read them rather than guessing.\n\nTwo consistency rules the server enforces:\n\n- **`draft` is idempotent on `client_request_id`.** Reuse the same value\n  when retrying a draft; a new value creates a second attempt.\n- **Every transition needs `expected_version`.** A stale version means\n  someone else moved the attempt and yours is rejected rather than\n  silently overwriting — re-read the attempt and retry.\n\nA `409 route_stale` on draft means the underlying relationship evidence\nchanged since it was reviewed; re-run `find_warm_path` and draft from a\nfresh `result_ref`.\n\n### Responses:\n\n**200**: Successful Response (Success Response)\nContent-Type: application/json\n\n**Example Response:**\n```json\n{\n  \"status\": \"Status\",\n  \"attempt\": {\n    \"ref\": \"Ref\",\n    \"relationship_owner_user_id\": \"Relationship Owner User Id\",\n    \"action_type\": \"Action Type\",\n    \"target_ref\": \"Target Ref\",\n    \"target_snapshot\": {},\n    \"result_ref\": \"Result Ref\",\n    \"result_type\": \"Result Type\",\n    \"channel\": \"Channel\",\n    \"client_request_id\": \"Client Request Id\",\n    \"route_fingerprint\": \"Route Fingerprint\",\n    \"message_text\": \"Message Text\",\n    \"state\": \"State\",\n    \"version\": 1,\n    \"created_at\": \"Created At\",\n    \"updated_at\": \"Updated At\"\n  },\n  \"approval_required\": true,\n  \"next_actions\": [\n    \"string\"\n  ],\n  \"web_url\": \"Web Url\"\n}\n```",
       "inputSchema": {
         "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "const": "draft",
+                "title": "Action",
+                "type": "string"
+              },
+              {
+                "const": "edit_draft",
+                "title": "Action",
+                "type": "string"
+              },
+              {
+                "const": "approve",
+                "title": "Action",
+                "type": "string"
+              },
+              {
+                "const": "confirm_external",
+                "title": "Action",
+                "type": "string"
+              },
+              {
+                "const": "classify_response",
+                "title": "Action",
+                "type": "string"
+              },
+              {
+                "const": "record_outcome",
+                "title": "Action",
+                "type": "string"
+              },
+              {
+                "const": "cancel",
+                "title": "Action",
+                "type": "string"
+              }
+            ],
+            "title": "action",
+            "type": "string"
+          },
+          "attempt_ref": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "attempt_ref",
+            "type": "string"
+          },
+          "channel": {
+            "default": "external",
+            "enum": [
+              "email",
+              "linkedin",
+              "external"
+            ],
+            "title": "channel",
+            "type": "string"
+          },
+          "client_request_id": {
+            "maxLength": 36,
+            "minLength": 36,
+            "title": "client_request_id",
+            "type": "string"
+          },
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "expected_version",
+            "type": "integer"
+          },
           "for_company": {
             "description": "Optional company ID or name (UUID, or case-insensitive EXACT name match — partial / substring matches are NOT supported; ambiguous names raise 400) to execute this tool as. Use get_operator_overview with view='companies' to list available companies. Only needed if you manage multiple companies. Access is enforced server-side: the tool resolves the value to a user_company_id and verifies the caller's membership in `company_users` — a 403 'Company not found or access denied' means EITHER the value did not match a known company OR the caller is not a member of it. The MCP operator role itself is NOT auto-granted — operators get this access by being members of each client company via `company_users` (the same row that grants any normal user access).",
             "title": "for_company",
             "type": "string"
+          },
+          "message_text": {
+            "anyOf": [
+              {
+                "maxLength": 5000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              },
+              {
+                "maxLength": 5000,
+                "minLength": 1,
+                "title": "Message Text",
+                "type": "string"
+              }
+            ],
+            "title": "message_text",
+            "type": "string"
+          },
+          "outcome": {
+            "additionalProperties": false,
+            "properties": {
+              "note": {
+                "anyOf": [
+                  {
+                    "maxLength": 500,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Note"
+              },
+              "status": {
+                "enum": [
+                  "conversation_booked",
+                  "routed_to_right_person",
+                  "introduction_made",
+                  "not_interested",
+                  "other"
+                ],
+                "title": "Status",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "title": "outcome",
+            "type": "object"
+          },
+          "purpose": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "purpose",
+            "type": "string"
+          },
+          "response": {
+            "enum": [
+              "can_intro",
+              "knows_not_comfortable",
+              "knows_not_well",
+              "does_not_know",
+              "needs_context",
+              "no_response"
+            ],
+            "title": "response",
+            "type": "string"
+          },
+          "result_ref": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "result_ref",
+            "type": "string"
+          },
+          "sent": {
+            "title": "sent",
+            "type": "boolean"
+          },
+          "target": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "target",
+            "type": "string"
           }
         },
+        "required": [
+          "action"
+        ],
         "title": "manage_relationship_actionArguments",
         "type": "object"
       },

@@ -1964,7 +1964,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Manage Settings\n\nUpdate company configuration — the consolidated settings writer.\n\nActions (no ids — settings are singletons per company):\n- profile: update the company profile / ICP (`payload` = the profile\n  fields; this steers research match scoring).\n- auto_fill: AI-fill the company profile from the website (`payload`\n  optional: {website_url?}; returns a job to poll via\n  fetch type='job').\n- automation: update outreach automation settings (`payload` = the\n  automation fields).\n- marketing: update LinkedIn marketing settings (`payload` = the\n  marketing fields).\n- cta_link: manage call-to-action links (`payload` = {action:\n  create|update|delete, cta_link_id?, name?, url?, cta_type?,\n  is_active?}).\n- hubspot_sync_settings: set the custom HubSpot contact properties to\n  mirror into company_people.custom_fields (`payload` =\n  {extra_contact_properties: [...]}); CHANGING the list auto-enqueues a\n  full backfill so existing contacts pick up the new attributes.\n- hubspot_backfill: kick a full HubSpot re-pull for this company (owners\n  → companies → pipelines → contacts → deals → lists → engagements). No\n  payload. Heavy (hours at 250k+ contacts). The recovery path when\n  contacts were imported before their custom properties were configured.\n  Operators target a client with `for_company`.\n- campaign_access_grant: let a member manage one sender's campaigns\n  (`payload` = {sender_user_id, delegate_user_id}). The sender, owner, or\n  operator can grant access.\n- campaign_access_revoke: revoke that access (`id` = delegation UUID).\n  The sender, owner, or operator can revoke access.\n\nPayloads are validated by the underlying route's own schema, so a bad\nfield returns that route's precise 422.\n\n### Responses:\n\n**200**: Successful Response (Success Response)\nContent-Type: application/json",
+      "description": "Manage Settings\n\nUpdate company configuration — the consolidated settings writer.\n\nActions (no ids — settings are singletons per company):\n- profile: update the company profile / ICP (`payload` = the profile\n  fields; this steers research match scoring). If supplied, `industry`\n  must be one CanonicalIndustry value: Agriculture, Construction,\n  Consumer Goods, Consumer Services, Education, Energy & Utilities,\n  Financial Services, Government, Healthcare, Hospitality & Travel,\n  Legal Services, Manufacturing, Marketing & Advertising,\n  Media & Entertainment, Nonprofit, Professional Services, Real Estate,\n  Retail & E-commerce, Software & Technology, Staffing & Recruiting,\n  Telecommunications, Transportation & Logistics, Wholesale & Distribution,\n  or Other. Provider labels and Unspecified are rejected.\n- auto_fill: AI-fill the company profile from the website (`payload`\n  optional: {website_url?}; returns a job to poll via\n  fetch type='job').\n- automation: update outreach automation settings (`payload` = the\n  automation fields).\n- marketing: update LinkedIn marketing settings (`payload` = the\n  marketing fields).\n- cta_link: manage call-to-action links (`payload` = {action:\n  create|update|delete, cta_link_id?, name?, url?, cta_type?,\n  is_active?}).\n- hubspot_sync_settings: set the custom HubSpot contact properties to\n  mirror into company_people.custom_fields (`payload` =\n  {extra_contact_properties: [...]}); CHANGING the list auto-enqueues a\n  full backfill so existing contacts pick up the new attributes.\n- hubspot_backfill: kick a full HubSpot re-pull for this company (owners\n  → companies → pipelines → contacts → deals → lists → engagements). No\n  payload. Heavy (hours at 250k+ contacts). The recovery path when\n  contacts were imported before their custom properties were configured.\n  Operators target a client with `for_company`.\n- campaign_access_grant: let a member manage one sender's campaigns\n  (`payload` = {sender_user_id, delegate_user_id}). The sender, owner, or\n  operator can grant access.\n- campaign_access_revoke: revoke that access (`id` = delegation UUID).\n  The sender, owner, or operator can revoke access.\n\nPayloads are validated by the underlying route's own schema, so a bad\nfield returns that route's precise 422.\n\n### Responses:\n\n**200**: Successful Response (Success Response)\nContent-Type: application/json",
       "inputSchema": {
         "properties": {
           "action": {
@@ -2034,7 +2034,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Research\n\nRun prospect/company research and save the results — the consolidated research tool.\n\nLookup actions (results are returned, not stored unless noted):\n- find_linkedin: locate a person's LinkedIn URL (id = person UUID;\n  `payload` optional {name_override?, company_override?, auto_save?} —\n  auto_save stores a high-confidence match).\n- enrich_account: acquire a bounded first-party evidence bundle for a\n  tenant-visible account (id = canonical company UUID). The response also\n  carries canonical company fields, cached shared research, and freshness\n  metadata for the harness to combine with its own web and MCP sources.\n  Persist sourced conclusions with save_company. The legacy enrich_company\n  action remains the domain/page website-fetch primitive.\n- find_email: find a work email (`payload` = {first_name, last_name,\n  domain}).\n- linkedin_fetch: pull a LinkedIn profile (`payload` = {linkedin_url,\n  include_company?, include_posts?, posts_limit?}).\n- enrich_person: enrich each person according to missing contact and profile\n  fields (id = person UUID, or an array of up to 100;\n  `payload` optional {force_refresh?}). Returns a job_id; poll it with\n  fetch type=job. Outcomes report a stable reason code, and jobs with any\n  errored outcome terminate as completed_with_failures. Successful outcomes\n  report readiness=email_ready, incomplete, or manual_review plus the\n  canonical employer binding.\n  Vruum applies separate monthly profile and Hunter-credit soft limits.\n  Harness web search and other MCP tools remain complementary for deeper\n  research. The legacy enrich_profile name is an alias.\n- enrich: canonical scoped enrichment. It inspects each person and runs\n  only the needed profile or verified-email work. Pass `payload` with exactly one of\n  `{person_ids: [...]}`, `{campaign_id: ...}`, or `{list_id: ...}`.\n  Returns a job_id; poll it with fetch type=job. The enrich_emails action\n  remains as a compatibility alias for the same scoped planner.\n- careers_parse: parse a careers page for hiring signals (`payload` =\n  {domain}).\n\nSave actions (write research rows):\n- save_person: UPDATE research on an EXISTING person — pass the person UUID\n  as `payload.person_id` (preferred; refreshes researched_at and the\n  research fields in place), or matching email/linkedin anchors. Cannot\n  create: new prospects go through manage_person action=save_discovered\n  with `payload.person` + `payload.assessment`. Never pass the person UUID\n  as `id` — this action takes no id.\n- save_company: atomically patch sourced public company research. Pass\n  `payload={idempotency_key, name, person_id?, website?, linkedin_url?,\n  company_summary?, company_stage?, current_priorities?, funding_data?,\n  growth_metrics?, sources_by_field}`. Omitted fields are preserved;\n  explicit null clears. When researching a specific person's employer,\n  ALWAYS pass their UUID as `payload.person_id` — the response's\n  `person_link` confirms the write landed on that person's linked company\n  (repointing an anchorless duplicate link when needed); a `mismatch`\n  status means the person's touches will NOT see this research, and a\n  `conflict` status is a transient race — replay the identical payload\n  (person_id is exempt from the idempotency hash, so adding it to a\n  replay is the supported repair).\n  For a researched-prospect save, save_company is also the company identity resolution step.\n  Reuse a trustworthy Vruum company_id when already known; otherwise call\n  save_company using name plus website and/or linkedin_url. Call it even\n  with no new research fields, and capture the returned company_id for\n  manage_person action=save_discovered. A company name alone is not a save identity.\n  `sources_by_field` must contain exactly every\n  supplied non-null research field, with entries\n  `{url, title?, observed_at}`. Example:\n  `{\"idempotency_key\":\"pipeline/example.com/save-v1\",\"name\":\"Example\",\n  \"website\":\"https://example.com\",\"company_summary\":\"Example sells …\",\n  \"sources_by_field\":{\"company_summary\":[{\"url\":\"https://example.com/about\",\n  \"title\":\"About\",\"observed_at\":\"2026-07-30T20:00:00Z\"}]}}`.\n\nBatch research returns per-item results (partial failure is reported per\nitem, never silent). The facade's backward-compatible request cap is 100;\nenrich_account accepts up to 10 accounts per request. Operators should execute the smaller policy waves\ndocumented by pipeline-fill (10 companies or 5 people at a time) so\nprogress and retries stay bounded. find_linkedin also takes person-id\narrays. Payloads are validated by the underlying route's own schema.\n\n### Responses:\n\n**200**: Successful Response (Success Response)\nContent-Type: application/json",
+      "description": "Research\n\nRun prospect/company research and save the results — the consolidated research tool.\n\nLookup actions (results are returned, not stored unless noted):\n- find_linkedin: locate a person's LinkedIn URL (id = person UUID;\n  `payload` optional {name_override?, company_override?, auto_save?} —\n  auto_save stores a high-confidence match).\n- enrich_account: acquire a bounded first-party evidence bundle for a\n  tenant-visible account (id = canonical company UUID). The response also\n  carries canonical company fields, cached shared research, and freshness\n  metadata for the harness to combine with its own web and MCP sources.\n  Persist sourced conclusions with save_company. The legacy enrich_company\n  action remains the domain/page website-fetch primitive.\n- find_email: find a work email (`payload` = {first_name, last_name,\n  domain}).\n- linkedin_fetch: pull a LinkedIn profile (`payload` = {linkedin_url,\n  include_company?, include_posts?, posts_limit?}).\n- enrich_person: enrich each person according to missing contact and profile\n  fields (id = person UUID, or an array of up to 100;\n  `payload` optional {force_refresh?}). Returns a job_id; poll it with\n  fetch type=job. Outcomes report a stable reason code, and jobs with any\n  errored outcome terminate as completed_with_failures. Successful outcomes\n  report readiness=email_ready, incomplete, or manual_review plus the\n  canonical employer binding.\n  Vruum applies separate monthly profile and Hunter-credit soft limits.\n  Harness web search and other MCP tools remain complementary for deeper\n  research. The legacy enrich_profile name is an alias.\n- enrich: canonical scoped enrichment. It inspects each person and runs\n  only the needed profile or verified-email work. Pass `payload` with exactly one of\n  `{person_ids: [...]}`, `{campaign_id: ...}`, or `{list_id: ...}`.\n  Returns a job_id; poll it with fetch type=job. The enrich_emails action\n  remains as a compatibility alias for the same scoped planner.\n- careers_parse: parse a careers page for hiring signals (`payload` =\n  {domain}).\n\nSave actions (write research rows):\n- save_person: UPDATE research on an EXISTING person — pass the person UUID\n  as `payload.person_id` (preferred; refreshes researched_at and the\n  research fields in place), or matching email/linkedin anchors. Cannot\n  create: new prospects go through manage_person action=save_discovered\n  with `payload.person` + `payload.assessment`. Never pass the person UUID\n  as `id` — this action takes no id.\n- save_company: atomically patch sourced public company research. Pass\n  `payload={idempotency_key, name, industry, person_id?, website?, linkedin_url?,\n  company_summary?, company_stage?, current_priorities?, funding_data?,\n  growth_metrics?, sources_by_field}`.\n  `industry` is required and must be one CanonicalIndustry value:\n  Agriculture, Construction, Consumer Goods, Consumer Services, Education,\n  Energy & Utilities, Financial Services, Government, Healthcare,\n  Hospitality & Travel, Legal Services, Manufacturing, Marketing & Advertising,\n  Media & Entertainment, Nonprofit, Professional Services, Real Estate,\n  Retail & E-commerce, Software & Technology, Staffing & Recruiting,\n  Telecommunications, Transportation & Logistics, Wholesale & Distribution,\n  or Other. Provider labels and Unspecified are rejected.\n  Omitted research fields are preserved; explicit null clears. When\n  researching a specific person's employer,\n  ALWAYS pass their UUID as `payload.person_id` — the response's\n  `person_link` confirms the write landed on that person's linked company\n  (repointing an anchorless duplicate link when needed); a `mismatch`\n  status means the person's touches will NOT see this research, and a\n  `conflict` status is a transient race — replay the identical payload\n  (person_id is exempt from the idempotency hash, so adding it to a\n  replay is the supported repair).\n  For a researched-prospect save, save_company is also the company identity resolution step.\n  Reuse a trustworthy Vruum company_id when already known; otherwise call\n  save_company using name plus website and/or linkedin_url. Call it even\n  with no new research fields, and capture the returned company_id for\n  manage_person action=save_discovered. A company name alone is not a save identity.\n  `sources_by_field` must contain exactly every\n  supplied non-null research field, with entries\n  `{url, title?, observed_at}`. Example:\n  `{\"idempotency_key\":\"pipeline/example.com/save-v1\",\"name\":\"Example\",\n  \"industry\":\"Software & Technology\",\"website\":\"https://example.com\",\n  \"company_summary\":\"Example sells …\",\n  \"sources_by_field\":{\"company_summary\":[{\"url\":\"https://example.com/about\",\n  \"title\":\"About\",\"observed_at\":\"2026-07-30T20:00:00Z\"}]}}`.\n\nBatch research returns per-item results (partial failure is reported per\nitem, never silent). The facade's backward-compatible request cap is 100;\nenrich_account accepts up to 10 accounts per request. Operators should execute the smaller policy waves\ndocumented by pipeline-fill (10 companies or 5 people at a time) so\nprogress and retries stay bounded. find_linkedin also takes person-id\narrays. Payloads are validated by the underlying route's own schema.\n\n### Responses:\n\n**200**: Successful Response (Success Response)\nContent-Type: application/json",
       "inputSchema": {
         "properties": {
           "action": {
@@ -2104,7 +2104,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Search\n\nPolymorphic read-only search across your Vruum workspace.\n\nOne tool for every list/queue/search read. Pass `type` to pick the entity:\npeople (your pipeline — keyword `query`, batch dedup array, or list-mode\n`filters`), companies (company-domain contact search for decision-makers —\nrequires filters.domain), directory_people and directory_companies (the shared\ncanonical directory — filters.query; contact/company/freshness only,\nnever another tenant's CRM state), deals, campaigns, messages (outreach queue), engagements\n(LinkedIn engagement queue), content (LinkedIn content calendar), kb\n(knowledge-base search), skills (published skills), cta_links, warm_paths\n(open targets that have a warm intro path — see find_warm_path for one\ntarget), relationship_attempts (the durable action timeline shared with\nthe Relationships workspace).\n\nAll types except `companies` read internal, tenant-scoped data only.\nPagination (`limit`/`offset`) is supported for people (list mode), deals,\nmessages, engagements, warm_paths, and relationship_attempts; other types reject it. Results are returned\nunder `{type, results}` with each entity type's native payload shape.\n\nCampaign routing: use `type='campaigns'` here to list campaigns (newest\nfirst, compact by default — the prose-heavy AI-strategy fields come back\nnull; see filters.fields). To read one campaign by UUID with its full\nconfig, use `fetch` with `type='campaign'`. To create, update, clone,\ndelete, diagnose, or manage campaign members, use `manage_campaign`.\n\n### Responses:\n\n**200**: Successful Response (Success Response)\nContent-Type: application/json",
+      "description": "Search\n\nPolymorphic read-only search across your Vruum workspace.\n\nOne tool for every list/queue/search read. Pass `type` to pick the entity:\npeople (your pipeline — keyword `query`, batch dedup array, or list-mode\n`filters`), companies (company-domain contact search for decision-makers —\nrequires filters.domain), directory_people (the shared people directory —\nrequires filters.query), and directory_companies (the shared company directory —\nfilters.query?, filters.industry?, or both; industry is the canonical enum,\nincluding Unspecified for missing source data). Directory results contain\ncontact/company/freshness fields only, never another tenant's CRM state.\nOther types are deals, campaigns, messages (outreach queue), engagements\n(LinkedIn engagement queue), content (LinkedIn content calendar), kb\n(knowledge-base search), skills (published skills), cta_links, warm_paths\n(open targets that have a warm intro path — see find_warm_path for one\ntarget), relationship_attempts (the durable action timeline shared with\nthe Relationships workspace).\n\nAll types except `companies` read internal, tenant-scoped data only.\nPagination (`limit`/`offset`) is supported for people (list mode), deals,\nmessages, engagements, warm_paths, and relationship_attempts; other types reject it. Results are returned\nunder `{type, results}` with each entity type's native payload shape.\n\nCampaign routing: use `type='campaigns'` here to list campaigns (newest\nfirst, compact by default — the prose-heavy AI-strategy fields come back\nnull; see filters.fields). To read one campaign by UUID with its full\nconfig, use `fetch` with `type='campaign'`. To create, update, clone,\ndelete, diagnose, or manage campaign members, use `manage_campaign`.\n\n### Responses:\n\n**200**: Successful Response (Success Response)\nContent-Type: application/json",
       "inputSchema": {
         "properties": {
           "filters": {
@@ -2741,10 +2741,10 @@
               },
               {
                 "additionalProperties": false,
-                "description": "Shared canonical-directory lookup, with no tenant-private fields.",
+                "description": "Shared people-directory lookup, with no tenant-private fields.",
                 "properties": {
                   "query": {
-                    "description": "Name, title, company, email, domain, or website search text.",
+                    "description": "Name, title, company, or email search text.",
                     "maxLength": 160,
                     "minLength": 3,
                     "title": "Query",
@@ -2754,14 +2754,76 @@
                 "required": [
                   "query"
                 ],
-                "title": "FacadeDirectoryFilters",
+                "title": "FacadeDirectoryPeopleFilters",
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "Shared company-directory lookup by text, canonical industry, or both.",
+                "properties": {
+                  "industry": {
+                    "anyOf": [
+                      {
+                        "description": "Canonical research values plus the fallback bucket used by search.",
+                        "enum": [
+                          "Unspecified",
+                          "Agriculture",
+                          "Construction",
+                          "Consumer Goods",
+                          "Consumer Services",
+                          "Education",
+                          "Energy & Utilities",
+                          "Financial Services",
+                          "Government",
+                          "Healthcare",
+                          "Hospitality & Travel",
+                          "Legal Services",
+                          "Manufacturing",
+                          "Marketing & Advertising",
+                          "Media & Entertainment",
+                          "Nonprofit",
+                          "Professional Services",
+                          "Real Estate",
+                          "Retail & E-commerce",
+                          "Software & Technology",
+                          "Staffing & Recruiting",
+                          "Telecommunications",
+                          "Transportation & Logistics",
+                          "Wholesale & Distribution",
+                          "Other"
+                        ],
+                        "title": "SearchableIndustry",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Canonical company-industry filter. Unspecified selects companies without enough source data. Provider labels such as SaaS are rejected."
+                  },
+                  "query": {
+                    "anyOf": [
+                      {
+                        "maxLength": 160,
+                        "minLength": 3,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Optional company name, domain, or website search text.",
+                    "title": "Query"
+                  }
+                },
+                "title": "FacadeDirectoryCompaniesFilters",
                 "type": "object"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "Type-specific filters — the object shape is determined by `type` (e.g. {domain} for companies, {stage, outcome, query} for deals). Unknown keys are rejected with 422.",
+            "description": "Type-specific filters — the object shape is determined by `type` (e.g. {domain} for companies, {stage, outcome, query} for deals, or {query?, industry?} for directory_companies). Unknown keys are rejected with 422.",
             "title": "filters",
             "type": "object"
           },
@@ -2780,7 +2842,7 @@
                 "type": "null"
               }
             ],
-            "description": "Page size. Supported for people, deals, messages, warm_paths, and relationship_attempts (max 100), plus engagements (max 200); people keyword-query mode caps at 40. Rejected (422) for other types.",
+            "description": "Page size. Supported for people, deals, messages, warm_paths, and relationship_attempts (max 100), engagements (max 200), and directory searches (max 40); people keyword-query mode caps at 40. Rejected (422) for other types.",
             "title": "limit",
             "type": "integer"
           },

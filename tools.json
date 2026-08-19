@@ -2438,6 +2438,23 @@
                     "description": "Only messages that have (true) / have not (false) received a reply.",
                     "title": "Has Reply"
                   },
+                  "message_type": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "outreach",
+                          "inbound",
+                          "all"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Row family (VRU-832). Omit or 'outreach' for outbound touches (default, unchanged). 'inbound' lists received replies — reply text in content, receive time in created_at, status 'received' (no actionable-status default applies); combine with category='person_reply' to exclude unsolicited inbound. 'all' returns both families.",
+                    "title": "Message Type"
+                  },
                   "person_id": {
                     "anyOf": [
                       {

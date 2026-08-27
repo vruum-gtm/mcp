@@ -2708,6 +2708,18 @@
                     "title": "Include Content",
                     "type": "boolean"
                   },
+                  "modified_after": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "ISO-8601 timestamp (no offset = UTC); requires doc_type='connector'. Returns only synced documents modified strictly after this instant — with no query, ordered newest-first. Use this (NOT a keyword query, which is a relevance-ranked top-N sample) for exhaustive 'what synced since <date>' discovery, e.g. finding new meeting transcripts past a watermark.",
+                    "title": "Modified After"
+                  },
                   "query": {
                     "anyOf": [
                       {

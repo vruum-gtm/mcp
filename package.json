@@ -1,6 +1,6 @@
 {
   "name": "@vruum/mcp",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "mcpName": "ai.vruum/mcp",
   "description": "Stdio MCP bridge for the hosted Vruum revenue-platform MCP (https://api.vruum.ai/mcp): serves the advertised tool surface for credential-free introspection and proxies tool calls with your Vruum token.",
   "license": "MIT",

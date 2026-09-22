@@ -112,6 +112,13 @@ Once connected, these are ordinary requests to your agent:
 
 Full schemas, descriptions and MCP safety annotations live in [`tools.json`](tools.json) — generated from the live server definition, never hand-edited.
 
+The 0.5.0 package includes the deployed P2e revenue contracts in that snapshot:
+`get_revenue` account and service-margin views, and the reviewed finance-statement
+action in `manage_revenue`. Hosted remote MCP already exposes these contracts;
+stdio clients receive the updated advertised schema after package publication
+and upgrade. Finance attestation, binding decisions and measurement approval
+retain their separate server-side checks.
+
 ## Configuration
 
 | Env var | Meaning | Default |

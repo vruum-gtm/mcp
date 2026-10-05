@@ -4,7 +4,7 @@
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![registry](https://img.shields.io/badge/MCP%20registry-ai.vruum%2Fmcp-6E56CF)](https://registry.modelcontextprotocol.io)
 
-Official MCP access to [**Vruum**](https://vruum.ai), the AI revenue platform. Give your agent the whole revenue motion — research prospects, build pipeline, run email and LinkedIn outreach, triage replies, manage deals through close, and read Stripe-backed revenue truth — through **33 compound tools** rather than a sprawl of endpoints. Outreach runs inside **objectives**: a goal, the people it targets, and the policy for reaching them.
+Official MCP access to [**Vruum**](https://vruum.ai), the AI revenue platform. Give your agent the whole revenue motion — research prospects, build pipeline, run email and LinkedIn outreach, triage replies, manage deals through close, and read Stripe-backed revenue truth — through **35 compound tools** rather than a sprawl of endpoints. Outreach runs inside **objectives**: a goal, the people it targets, and the policy for reaching them.
 
 This package is a **stdio bridge**: it serves the tool surface locally (no credentials needed to introspect) and proxies execution to `https://api.vruum.ai/mcp` under your token. Every call is authorized server-side — the bridge grants no authority your Vruum account doesn't already have.
 
@@ -91,22 +91,22 @@ Once connected, these are ordinary requests to your agent:
 
 Your harness authors outreach copy, replies, LinkedIn posts, and comments through
 their review surfaces. Saved analysis can also run on the server after an
-explicit request through `manage_assistant`. Retained email work has a separate
-activation and exact approval contract; analysis does not grant permission to send.
+explicit request through `manage_assistant`. Use its separate `start_email` action
+for one saved email draft. Analysis does not grant permission to send.
 
 ## Tool surface
 
-33 compound tools. Read operations inspect saved data; write operations mutate it.
+35 compound tools. Read operations inspect saved data; write operations mutate it.
 Some writes buy provider work or produce external effects. Each tool describes
 its own authorization and retry contract.
 
 | Area | Tools |
 | --- | --- |
 | **Daily operating** | `get_daily_briefing` · `get_next_actions` · `inspect_pipeline` |
-| **Search & research** | `search` · `fetch` · `research` · `import_prospects` · `find_warm_path` |
+| **Search & research** | `search` · `fetch` · `research` · `research_lookup` · `import_prospects` · `find_warm_path` |
 | **People** | `get_person_360` · `manage_person` |
 | **Relationship identity** | `get_network_identity_review` · `manage_network_identity_resolution` |
-| **Objectives & outreach** | `get_outreach_review` · `manage_messages` · `manage_outreach` · `manage_relationship_action` |
+| **Objectives & outreach** | `inspect_objective` · `get_outreach_review` · `manage_messages` · `manage_outreach` · `manage_relationship_action` |
 | **Engagement & content** | `get_engagement_review` · `manage_engagements` · `get_content_review` · `manage_content` |
 | **Performance** | `get_objective_outcomes` · `get_performance_metrics` |
 | **Deals** | `get_deal_360` · `manage_deal` |
@@ -115,14 +115,25 @@ its own authorization and retry contract.
 | **Imports & assistant** | `manage_history_import` · `manage_assistant` |
 | **Workspaces, config & skills** | `get_operator_companies` · `manage_settings` · `skill` |
 
-`manage_outreach` also creates, configures, launches, and pauses objectives. `get_operator_companies` lists the workspaces your login can act in; it is not limited to Vruum staff.
+`manage_outreach` also creates, configures, launches, and pauses objectives; `inspect_objective` reads an objective's setup, audience, forecast, and sourcing plan. No tool mixes reads with writes: `research_lookup` holds the external lookups (work email, LinkedIn profile, company website, careers page, LinkedIn people search), which can spend provider credits or LinkedIn budget. `get_operator_companies` lists the workspaces your login can act in; it is not limited to Vruum staff.
 
 Full schemas, descriptions and MCP safety annotations live in [`tools.json`](tools.json) — generated from the live server definition, never hand-edited.
 
 The current package also carries the retained-email decision instructions in
 `manage_messages`. A saved email uses its displayed Action version, proposal
 revision, and fingerprint. Approval is not a delivery receipt; changed content
-requires new work. Public `manage_assistant` activation remains analysis-only.
+requires new work.
+
+Use `manage_assistant action=start_email` with `payload={request_id, message,
+person_id, sender_config_id}` after the user requests the email work. The person
+must be an eligible workspace contact. The mailbox must be available to the
+current actor and eligible for outreach. Starting buys model work and creates one
+private draft; it does not approve or send. Inspect `email_scope` on the returned
+saved task. Open its `review_message_id` through the existing message review, read
+the exact sender, recipient, subject and complete body, and request approval.
+Keep the same request UUID and all four inputs after an uncertain acknowledgement.
+The saved task owns model and delivery recovery; an unknown outcome does not
+authorize a replacement task or a second send.
 
 Use `manage_assistant action=follow_up` to continue completed private analysis.
 Retain the same request UUID, parent Action, displayed revision, and message on

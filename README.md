@@ -119,6 +119,12 @@ stdio clients receive the updated advertised schema after package publication
 and upgrade. Finance attestation, binding decisions and measurement approval
 retain their separate server-side checks.
 
+The current package also carries the retained-email decision instructions in
+`manage_messages`. A saved email uses its displayed Action version, proposal
+revision, and fingerprint. Approval is not a delivery receipt; changed content
+requires new work. This updates packaged guidance without adding a public task
+activation tool.
+
 ## Configuration
 
 | Env var | Meaning | Default |

@@ -4,7 +4,7 @@
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![registry](https://img.shields.io/badge/MCP%20registry-ai.vruum%2Fmcp-6E56CF)](https://registry.modelcontextprotocol.io)
 
-Official MCP access to [**Vruum**](https://vruum.ai), the AI revenue platform. Give your agent the whole revenue motion — research prospects, build pipeline, run email and LinkedIn outreach, triage replies, manage deals through close, and read Stripe-backed revenue truth — through **29 compound tools** rather than a sprawl of endpoints.
+Official MCP access to [**Vruum**](https://vruum.ai), the AI revenue platform. Give your agent the whole revenue motion — research prospects, build pipeline, run email and LinkedIn outreach, triage replies, manage deals through close, and read Stripe-backed revenue truth — through **33 compound tools** rather than a sprawl of endpoints. Outreach runs inside **objectives**: a goal, the people it targets, and the policy for reaching them.
 
 This package is a **stdio bridge**: it serves the tool surface locally (no credentials needed to introspect) and proxies execution to `https://api.vruum.ai/mcp` under your token. Every call is authorized server-side — the bridge grants no authority your Vruum account doesn't already have.
 
@@ -63,11 +63,10 @@ env = { VRUUM_MCP_TOKEN = "vk_live_…" }
 <summary><b>Already use the Vruum CLI?</b> — no token needed here</summary>
 
 ```sh
-npx @vruum/cli
-vruum login --token vk_live_…
+npx @vruum/cli login --token vk_live_…
 ```
 
-Credentials land in `~/.vruum/credentials` and the bridge picks them up automatically — omit the `env` block entirely.
+The CLI needs Node 22+. Credentials land in `~/.vruum/credentials` and the bridge picks them up automatically — omit the `env` block entirely.
 </details>
 
 Verify it works without configuring anything:
@@ -86,44 +85,51 @@ Once connected, these are ordinary requests to your agent:
 | *"Review my outreach drafts"* | `get_outreach_review` → you approve, edit, or reject each one |
 | *"Research Acme Corp and tell me if they fit"* | `research` — website, funding, careers signals, ICP match with reasoning |
 | *"Find a warm intro to this person"* | `find_warm_path` — separates verified paths from unverified connector candidates |
-| *"Which campaigns are actually working?"* | `get_campaign_outcomes` — contacted, replies, meetings booked, cohort-consistent |
+| *"Which objectives are actually working?"* | `get_objective_outcomes` — contacted, replied, and meetings booked, compared across objectives |
 | *"What's at risk in my pipeline?"* | `inspect_pipeline` — the 5 most at-risk deals, risk-first |
 | *"Draft a LinkedIn post about X"* | `manage_content` — your agent writes it, you approve, Vruum schedules and publishes |
 
-> [!IMPORTANT]
-> **Your agent writes the prose — the server never does.** Outreach copy, replies, LinkedIn posts and comments surface to your harness as work items. Vruum schedules, gates, persists and sends; it has no server-side message generation. That's a deliberate design position, not a gap.
+Your harness authors outreach copy, replies, LinkedIn posts, and comments through
+their review surfaces. Saved analysis can also run on the server after an
+explicit request through `manage_assistant`. Retained email work has a separate
+activation and exact approval contract; analysis does not grant permission to send.
 
 ## Tool surface
 
-29 compound tools — one per decision, so an agent never disambiguates between overlapping verbs. `read` is safe to call freely; `write` mutates; `destructive` can delete or archive.
+33 compound tools. Read operations inspect saved data; write operations mutate it.
+Some writes buy provider work or produce external effects. Each tool describes
+its own authorization and retry contract.
 
 | Area | Tools |
 | --- | --- |
 | **Daily operating** | `get_daily_briefing` · `get_next_actions` · `inspect_pipeline` |
 | **Search & research** | `search` · `fetch` · `research` · `import_prospects` · `find_warm_path` |
 | **People** | `get_person_360` · `manage_person` |
-| **Outreach** | `get_outreach_review` · `manage_messages` · `manage_outreach` · `manage_relationship_action` |
+| **Relationship identity** | `get_network_identity_review` · `manage_network_identity_resolution` |
+| **Objectives & outreach** | `get_outreach_review` · `manage_messages` · `manage_outreach` · `manage_relationship_action` |
 | **Engagement & content** | `get_engagement_review` · `manage_engagements` · `get_content_review` · `manage_content` |
-| **Campaigns & performance** | `manage_campaign` · `get_campaign_outcomes` · `get_performance_metrics` |
+| **Performance** | `get_objective_outcomes` · `get_performance_metrics` |
 | **Deals** | `get_deal_360` · `manage_deal` |
 | **Revenue** | `get_revenue` · `manage_revenue` |
 | **Accounts & knowledge** | `manage_account` · `manage_kb` |
-| **Config & skills** | `manage_settings` · `skill` |
+| **Imports & assistant** | `manage_history_import` · `manage_assistant` |
+| **Workspaces, config & skills** | `get_operator_companies` · `manage_settings` · `skill` |
+
+`manage_outreach` also creates, configures, launches, and pauses objectives. `get_operator_companies` lists the workspaces your login can act in; it is not limited to Vruum staff.
 
 Full schemas, descriptions and MCP safety annotations live in [`tools.json`](tools.json) — generated from the live server definition, never hand-edited.
-
-The 0.5.0 package includes the deployed P2e revenue contracts in that snapshot:
-`get_revenue` account and service-margin views, and the reviewed finance-statement
-action in `manage_revenue`. Hosted remote MCP already exposes these contracts;
-stdio clients receive the updated advertised schema after package publication
-and upgrade. Finance attestation, binding decisions and measurement approval
-retain their separate server-side checks.
 
 The current package also carries the retained-email decision instructions in
 `manage_messages`. A saved email uses its displayed Action version, proposal
 revision, and fingerprint. Approval is not a delivery receipt; changed content
-requires new work. This updates packaged guidance without adding a public task
-activation tool.
+requires new work. Public `manage_assistant` activation remains analysis-only.
+
+Use `manage_assistant action=follow_up` to continue completed private analysis.
+Retain the same request UUID, parent Action, displayed revision, and message on
+an uncertain retry. The server creates one new Action and reconstructs permitted
+history with fresh company context. Read earlier turns through the
+`previous_action_id` returned by `fetch assistant_task`; each turn retains its
+own complete content references. Opening or reading work never starts analysis.
 
 ## Configuration
 
@@ -146,7 +152,7 @@ your agent  ──stdio/JSON-RPC──▶  @vruum/mcp
                                                           (authorized server-side)
 ```
 
-Listings are a **static snapshot** bundled at release. That's what makes credential-free introspection possible, and it means a newly added tool won't *appear* until the next release — calls still execute correctly, since they proxy through. A CI guard regenerates `tools.json` on every backend change, so the snapshot can be one release old but never silently wrong.
+Listings are a **static snapshot** bundled at release. That's what makes credential-free introspection possible, and it means a newly added tool won't *appear* until the next release — calls still execute correctly, since they proxy through. In the monorepo, a snapshot test fails any change that lets `tools.json` drift from the server definition, so a release never ships a stale listing.
 
 ## Safety and credentials
 
@@ -167,7 +173,7 @@ Listings are a **static snapshot** bundled at release. That's what makes credent
 
 ## Development
 
-This repo is a **build artifact of the Vruum monorepo**, resynced automatically on release. `tools.json` is generated from the live server definition, so it cannot drift from what the hosted server exposes.
+This repo is a **build artifact of the Vruum monorepo**, resynced automatically on release. `tools.json` is generated from the server definition, and a snapshot test in the monorepo fails when the two differ. Between releases, the hosted server can be ahead of this snapshot.
 
 ```
 src/index.ts   the bridge — token resolution, static listings, proxied calls

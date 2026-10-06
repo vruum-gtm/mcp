@@ -135,12 +135,19 @@ Keep the same request UUID and all four inputs after an uncertain acknowledgemen
 The saved task owns model and delivery recovery; an unknown outcome does not
 authorize a replacement task or a second send.
 
-Use `manage_assistant action=follow_up` to continue completed private analysis.
+Use `manage_assistant action=follow_up` to continue completed private analysis
+or eligible private email work. A pending unapproved email revision retires the
+old draft atomically. Completed email work prepares a new email, not a mail-thread
+reply. The server retains the original contact and mailbox; a new draft requires
+its own approval. Approved or uncertain delivery keeps its original recovery.
 Retain the same request UUID, parent Action, displayed revision, and message on
 an uncertain retry. The server creates one new Action and reconstructs permitted
 history with fresh company context. Read earlier turns through the
 `previous_action_id` returned by `fetch assistant_task`; each turn retains its
-own complete content references. Opening or reading work never starts analysis.
+own complete content references. Earlier email drafts keep their canonical review
+links. The server retains permitted draft/research context and reconstructs it
+when one model request cannot hold it. Exact current delivery state stays outside
+working notes. Opening or reading work never starts a model purchase.
 
 ## Configuration
 

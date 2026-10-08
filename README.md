@@ -90,9 +90,10 @@ Once connected, these are ordinary requests to your agent:
 | *"Draft a LinkedIn post about X"* | `manage_content` — your agent writes it, you approve, Vruum schedules and publishes |
 
 Your harness authors outreach copy, replies, LinkedIn posts, and comments through
-their review surfaces. Saved analysis can also run on the server after an
-explicit request through `manage_assistant`. Use its separate `start_email` action
-for one saved email draft. Analysis does not grant permission to send.
+their review surfaces. It can also chat with Vruum through `manage_assistant`
+(`start_conversation`, `append_message`): the same chat as the app's floating
+panel, which reads your records and applies reversible record changes with Undo.
+The chat does not draft or send messages.
 
 ## Tool surface
 
@@ -124,30 +125,22 @@ The current package also carries the retained-email decision instructions in
 revision, and fingerprint. Approval is not a delivery receipt; changed content
 requires new work.
 
-Use `manage_assistant action=start_email` with `payload={request_id, message,
-person_id, sender_config_id}` after the user requests the email work. The person
-must be an eligible workspace contact. The mailbox must be available to the
-current actor and eligible for outreach. Starting buys model work and creates one
-private draft; it does not approve or send. Inspect `email_scope` on the returned
-saved task. Open its `review_message_id` through the existing message review, read
-the exact sender, recipient, subject and complete body, and request approval.
-Keep the same request UUID and all four inputs after an uncertain acknowledgement.
-The saved task owns model and delivery recovery; an unknown outcome does not
-authorize a replacement task or a second send.
-
-Use `manage_assistant action=follow_up` to continue completed private analysis
-or eligible private email work. A pending unapproved email revision retires the
-old draft atomically. Completed email work prepares a new email, not a mail-thread
-reply. The server retains the original contact and mailbox; a new draft requires
-its own approval. Approved or uncertain delivery keeps its original recovery.
-Retain the same request UUID, parent Action, displayed revision, and message on
-an uncertain retry. The server creates one new Action and reconstructs permitted
-history with fresh company context. Read earlier turns through the
-`previous_action_id` returned by `fetch assistant_task`; each turn retains its
-own complete content references. Earlier email drafts keep their canonical review
-links. The server retains permitted draft/research context and reconstructs it
-when one model request cannot hold it. Exact current delivery state stays outside
-working notes. Opening or reading work never starts a model purchase.
+Chat with Vruum through `manage_assistant`. `start_conversation` takes
+`payload={request_id, message, context?}` and waits up to 50 seconds for the
+answer; `append_message` takes `id=<chat UUID>` and the same payload. The result
+names the chat, the turn's state, the question, the answer, `changes` (each
+record change the chat applied, with its Undo state) and `cards`. A turn still
+running after 50 seconds returns `running`; read the chat later with
+`inspect_assistant action=read id=<chat UUID>`. Actions Undo cannot reverse,
+and actions that reach a customer or spend, come back as a card with the exact
+call, and the turn returns `awaiting_approval`. `manage_assistant
+action=decide_card id=<item UUID> payload={decision: approved|declined}` decides
+one, only with the user's own answer: approved runs that exact call once under
+your credentials, declined never runs it; it waits up to 50 seconds for the
+turn. `manage_assistant action=undo id=<item UUID>` runs a change's exact
+inverse and is refused when the record was edited since; `action=rate
+id=<message UUID>` rates an answer. Keep the same `request_id` on a
+retry after an uncertain response: the server runs each request once.
 
 ## Configuration
 

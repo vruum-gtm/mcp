@@ -30,24 +30,24 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { Diagnostics, family } from "./diagnostics.js";
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import {
-  CallToolRequestSchema,
-  CallToolResultSchema,
-  ErrorCode,
-  ListToolsRequestSchema,
-  McpError,
+  ProtocolError,
+  ProtocolErrorCode,
+  Server,
   type CallToolResult,
-} from "@modelcontextprotocol/sdk/types.js";
+} from "@modelcontextprotocol/server";
+import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 
 const DEFAULT_MCP_URL = "https://api.vruum.ai/mcp";
 // The SDK's per-request default is 60s, which real Vruum tools (research,
 // imports) legitimately exceed. Overridable via VRUUM_MCP_TIMEOUT_MS.
 const DEFAULT_CALL_TIMEOUT_MS = 300_000;
+const attempts = new AsyncLocalStorage<string>();
 
 function resolveCallTimeoutMs(): number {
   const raw = Number(process.env.VRUUM_MCP_TIMEOUT_MS);
@@ -137,6 +137,8 @@ class RemoteProxy {
     private readonly url: string,
     private readonly token: string,
     private readonly version: string,
+    private readonly diagnostics: Diagnostics,
+    private readonly clientName: () => string,
   ) {}
 
   private getClient(): Promise<Client> {
@@ -144,6 +146,13 @@ class RemoteProxy {
     if (!this.connecting) {
       this.connecting = (async () => {
         const transport = new StreamableHTTPClientTransport(new URL(this.url), {
+          fetch: (url, init) => {
+            const headers = new Headers(init?.headers);
+            headers.set("X-Vruum-Client", this.clientName());
+            const attempt = attempts.getStore();
+            if (attempt) headers.set("X-Vruum-Attempt-Id", attempt);
+            return fetch(url, { ...init, headers });
+          },
           requestInit: {
             headers: { Authorization: `Bearer ${this.token}` },
           },
@@ -186,7 +195,6 @@ class RemoteProxy {
   ): Promise<CallToolResult> {
     return client.request(
       { method: "tools/call", params: { name, arguments: args } },
-      CallToolResultSchema,
       { timeout: resolveCallTimeoutMs(), resetTimeoutOnProgress: true },
     );
   }
@@ -196,6 +204,7 @@ class RemoteProxy {
     try {
       client = await this.getClient();
     } catch (connectErr) {
+      await this.diagnostics.record(attempts.getStore()!, "tools/call", name, "connect_error");
       // First-connect failures (DNS, invalid token, endpoint down) get the
       // same structured error path as call failures — never a raw handler
       // throw that surfaces as an opaque JSON-RPC internal error.
@@ -209,6 +218,7 @@ class RemoteProxy {
     try {
       return await this.rawCall(client, name, args);
     } catch (callErr) {
+      await this.diagnostics.record(attempts.getStore()!, "tools/call", name, "call_error");
       this.discard(client);
       const msg = callErr instanceof Error ? callErr.message : String(callErr);
       return errorResult(
@@ -228,8 +238,6 @@ async function main(): Promise<void> {
   const creds = readCredentials();
   const token = resolveToken(creds);
   const mcpUrl = resolveMcpUrl(creds);
-  const proxy = token ? new RemoteProxy(mcpUrl, token, pkg.version) : null;
-
   const server = new Server(
     { name: "vruum-mcp", version: pkg.version },
     {
@@ -243,37 +251,78 @@ async function main(): Promise<void> {
         `${mcpUrl} under your Vruum token and are authorized server-side.`,
     },
   );
+  const diagnostics = new Diagnostics(
+    process.env.VRUUM_CONFIG_DIR || join(homedir(), ".vruum"),
+    mcpUrl, token, new Set(toolsDoc.tools.map((tool) => tool.name)),
+    () => family(server.getClientVersion()?.name),
+  );
+  const proxy = token ? new RemoteProxy(
+    mcpUrl, token, pkg.version, diagnostics,
+    () => family(server.getClientVersion()?.name),
+  ) : null;
+  server.onerror = () => {
+    void diagnostics.record(randomUUID(), "unknown", "unknown", "protocol_error")
+      .then(() => diagnostics.flush());
+  };
 
-  server.setRequestHandler(ListToolsRequestSchema, async (request) => {
+  server.setRequestHandler("tools/list", async (request) => {
+    const attempt = randomUUID();
+    await diagnostics.record(attempt, "tools/list", "unknown", "started");
     // The full list is returned in one page, so `nextCursor` is never set and
     // a client can never legitimately hold a cursor for this server. Spec:
     // "Invalid cursors SHOULD result in an error with code -32602."
     const cursor = request.params?.cursor;
     if (cursor !== undefined) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
+      await diagnostics.record(attempt, "tools/list", "unknown", "invalid_cursor");
+      void diagnostics.flush();
+      throw new ProtocolError(
+        ProtocolErrorCode.InvalidParams,
         "Invalid cursor: this server returns all tools in a single page and " +
           "never issues a nextCursor.",
       );
     }
+    await diagnostics.record(attempt, "tools/list", "unknown", "success");
+    void diagnostics.flush();
     return { tools: toolsDoc.tools as never };
   });
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler("tools/call", async (request, ctx) => {
     const { name, arguments: args } = request.params;
+    const attempt = randomUUID();
+    const start = performance.now();
+    ctx.mcpReq.signal.addEventListener("abort", () => {
+      void diagnostics.record(attempt, "tools/call", name, "cancelled")
+        .then(() => diagnostics.flush());
+    }, { once: true });
+    await diagnostics.record(attempt, "tools/call", name, "started");
     // Spec (server/tools#error-handling): errors in *finding* the tool are
     // PROTOCOL errors, not `isError` results — only errors originating from a
     // tool's execution use `isError: true` (so the model can self-correct).
     if (!toolsDoc.tools.some((t) => t.name === name)) {
-      throw new McpError(ErrorCode.InvalidParams, `Unknown tool: ${name}`);
+      await diagnostics.record(attempt, "tools/call", name, "unknown_tool");
+      void diagnostics.flush();
+      throw new ProtocolError(ProtocolErrorCode.InvalidParams, `Unknown tool: ${name}`);
     }
     // A missing token IS an execution error — the tool exists and the model
     // should see why it could not run.
-    if (!proxy) return errorResult(NO_TOKEN_HELP);
-    return proxy.call(name, (args ?? {}) as Record<string, unknown>);
+    if (!proxy) {
+      await diagnostics.record(attempt, "tools/call", name, "missing_token");
+      return errorResult(NO_TOKEN_HELP);
+    }
+    const result = await attempts.run(attempt, () => proxy.call(name, (args ?? {}) as Record<string, unknown>));
+    await diagnostics.record(attempt, "tools/call", name, result.isError ? "tool_error" : "success", performance.now() - start);
+    void diagnostics.flush();
+    return result;
   });
 
+  // A Server connected straight to StdioServerTransport speaks only the
+  // 2025-era protocol (initialize handshake, 2024-10-07 … 2025-11-25), which
+  // is every client deployed today. Serving 2026-07-28 too would mean
+  // `serveStdio()`, where getClientVersion() is undefined on modern
+  // connections and the diagnostics client family needs the request envelope.
   await server.connect(new StdioServerTransport());
+  // Old offline reports may be uploaded even before a new tool is called.
+  void diagnostics.flush();
 }
 
 main().catch((err) => {

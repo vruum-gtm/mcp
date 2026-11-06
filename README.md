@@ -75,6 +75,30 @@ Verify it works without configuring anything:
 npx -y @modelcontextprotocol/inspector --cli npx -y @vruum/mcp --method tools/list
 ```
 
+## Reliability diagnostics
+
+The bridge records content-free operational metadata: generated attempt IDs,
+the declared client family (Claude/Codex/ChatGPT/unknown), known tool name,
+start/outcome, timestamp and duration. It never records tool arguments, results,
+credentials, raw error text or conversations. The private outbox is under
+`~/.vruum/mcp-diagnostics/` (or `VRUUM_CONFIG_DIR`), separated by endpoint.
+
+Records survive bridge restarts and upload to that same endpoint's authenticated
+`/diagnostics` route after connectivity returns. Only a durable acknowledgement
+removes them. A restored connection drains the backlog in bounded batches.
+Transient failures retry once per minute while the bridge is alive; authentication
+or unsupported-endpoint responses wait for subsequent activity/startup.
+Uploads never follow redirects or transmit credentials over non-local HTTP.
+The queue retains at most 500 records per endpoint and reports overflow;
+disk failures print a coverage warning on stderr. Stdout remains MCP JSON-RPC.
+
+Missing-token, connection, protocol, cancellation, invalid-cursor and call
+failures are observable when the bridge runs. An offline machine cannot deliver
+reports until it reconnects, and an old installed package has none of these
+diagnostics. A bridge success means it received the remote result, not that the
+host used it correctly. Business calls are never automatically replayed after
+an ambiguous failure. Server and bridge evidence correlate by attempt ID.
+
 ## What you can ask for
 
 Once connected, these are ordinary requests to your agent:
@@ -198,7 +222,7 @@ npm test        # builds, then runs the black-box suite
 npm run typecheck
 ```
 
-Tests drive the built binary over stdin/stdout and assert **at the wire level** rather than through an SDK client — an SDK-mediated test hides protocol mistakes, since it will happily hand back a result object whether the server returned `result` or `error`. They cover the initialize handshake, credential-free listing, protocol-vs-execution error semantics, cursor rejection, capability declaration, and stdout hygiene.
+Tests drive the built binary over stdin/stdout and assert **at the wire level** rather than through an SDK client — an SDK-mediated test hides protocol mistakes, since it will happily hand back a result object whether the server returned `result` or `error`. They cover the initialize handshake (including negotiation down to older clients on earlier spec revisions), credential-free listing, protocol-vs-execution error semantics, cursor rejection, capability declaration, and stdout hygiene.
 
 **Issues and PRs are welcome here.** Maintainers apply accepted changes upstream in the monorepo and they flow back on the next sync — so a merged fix here may appear as part of a sync commit rather than your original one. Changes to `tools.json` must come from the generator, not by hand.
 

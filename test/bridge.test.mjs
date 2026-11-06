@@ -14,6 +14,9 @@ import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { createServer } from "node:http";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = join(ROOT, "dist", "index.js");
@@ -83,6 +86,15 @@ test("initialize handshake identifies the bridge", async () => {
   const init = res.get(1);
   assert.equal(init.result.serverInfo.name, "vruum-mcp");
   assert.ok(init.result.capabilities.tools, "must advertise tools capability");
+});
+
+test("older clients keep the protocol version they asked for", async () => {
+  // Clients pinned to earlier spec revisions are still deployed; the bridge
+  // must negotiate down to them instead of answering with its latest version.
+  for (const protocolVersion of ["2024-11-05", "2025-03-26"]) {
+    const res = await rpc([{ ...INITIALIZE, params: { ...INITIALIZE.params, protocolVersion } }]);
+    assert.equal(res.get(1).result.protocolVersion, protocolVersion);
+  }
 });
 
 test("tools/list serves the full bundled surface without credentials", async () => {
@@ -185,4 +197,48 @@ test("writes nothing but JSON-RPC to stdout", async () => {
   // rpc() JSON.parses every non-empty stdout line, so reaching here without a
   // throw already proves stdout hygiene; assert we got the response back.
   assert.equal(res.get(6).result.tools.length, TOOLS.tool_count);
+});
+
+test("remote calls carry independent correlation ids and ambiguous failures are never replayed", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "vruum-bridge-wire-"));
+  const calls = [];
+  const server = createServer(async (req, res) => {
+    if (req.method !== "POST") return res.writeHead(405).end();
+    let raw = "";
+    for await (const part of req) raw += part;
+    const message = JSON.parse(raw);
+    if (req.url.endsWith("/diagnostics")) return res.writeHead(503).end();
+    if (message.method === "tools/call") {
+      calls.push({ attempt: req.headers["x-vruum-attempt-id"], client: req.headers["x-vruum-client"] });
+      // Ambiguous dropped response; the mock counts every execution.
+      return req.socket.destroy();
+    }
+    if (message.id === undefined) return res.writeHead(202).end();
+    const result = { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "synthetic", version: "1" } };
+    res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(async () => {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+    await rm(root, { recursive: true, force: true });
+  });
+  const replies = await rpc([
+    { ...INITIALIZE, params: { ...INITIALIZE.params, clientInfo: { name: "claude-code", version: "1" } } },
+    INITIALIZED,
+    ...[2, 3].map((id) => ({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "fetch", arguments: { type: "private-fixture" } } })),
+  ], { env: { VRUUM_CONFIG_DIR: root, VRUUM_MCP_TOKEN: "synthetic", VRUUM_MCP_URL: `http://127.0.0.1:${server.address().port}/mcp` } });
+  assert.equal(replies.get(2).result.isError, true);
+  assert.equal(replies.get(3).result.isError, true);
+  assert.equal(calls.length, 2, "one HTTP attempt per requested business call");
+  assert.notEqual(calls[0].attempt, calls[1].attempt);
+  assert.ok(calls.every((call) => call.client === "claude" && /^[0-9a-f-]{36}$/.test(call.attempt)));
+  const dirs = await readdir(join(root, "mcp-diagnostics"));
+  const dir = join(root, "mcp-diagnostics", dirs[0]);
+  const files = (await readdir(dir)).filter((name) => name.endsWith(".json"));
+  const events = await Promise.all(files.map(async (name) => JSON.parse(await readFile(join(dir, name), "utf8"))));
+  assert.equal(JSON.stringify(events).includes("private-fixture"), false);
+  for (const call of calls) {
+    assert.ok(events.some((event) => event.attempt_id === call.attempt && event.outcome === "call_error"));
+  }
 });
